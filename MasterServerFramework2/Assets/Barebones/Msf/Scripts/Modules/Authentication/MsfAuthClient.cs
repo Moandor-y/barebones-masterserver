@@ -1,12 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
+
 using Barebones.Networking;
 
 namespace Barebones.MasterServer
 {
     public class MsfAuthClient : MsfBaseClient
     {
-        public delegate void LoginCallback(AccountInfoPacket accountInfo, string error);
+        public delegate void LoginCallback(AccountInfoPacket accountInfo,
+                                           string error);
 
         private bool _isLoggingIn;
 
@@ -18,24 +21,25 @@ namespace Barebones.MasterServer
         public event Action Registered;
         public event Action LoggedOut;
 
-        public MsfAuthClient(IClientSocket connection) : base(connection)
-        {
-        }
+        public MsfAuthClient(IClientSocket connection) : base(connection) { }
 
         /// <summary>
         /// Sends a registration request to server
         /// </summary>
         /// <param name="data"></param>
         /// <param name="callback"></param>
-        public void Register(Dictionary<string, string> data, SuccessCallback callback)
+        public async Task Register(Dictionary<string, string> data,
+                                   SuccessCallback callback)
         {
-            Register(data, callback, Connection);
+            await Register(data, callback, Connection);
         }
 
         /// <summary>
         /// Sends a registration request to given connection
         /// </summary>
-        public void Register(Dictionary<string, string> data, SuccessCallback callback, IClientSocket connection)
+        public async Task Register(Dictionary<string, string> data,
+                                   SuccessCallback callback,
+                                   IClientSocket connection)
         {
             if (_isLoggingIn)
             {
@@ -57,31 +61,32 @@ namespace Barebones.MasterServer
 
             // We first need to get an aes key 
             // so that we can encrypt our login data
-            Msf.Security.GetAesKey(aesKey =>
+            var aesKey = await Msf.Security.GetAesKey(connection);
+            if (aesKey == null)
             {
-                if (aesKey == null)
+                callback.Invoke(
+                    false, "Failed to register due to security issues");
+                return;
+            }
+
+            var encryptedData =
+                await Msf.Security.EncryptAES(data.ToBytes(), aesKey);
+
+            connection.SendMessage(
+                (short) MsfOpCodes.RegisterAccount,
+                encryptedData, (status, response) =>
                 {
-                    callback.Invoke(false, "Failed to register due to security issues");
-                    return;
-                }
-
-                var encryptedData = Msf.Security.EncryptAES(data.ToBytes(), aesKey);
-
-                connection.SendMessage((short)MsfOpCodes.RegisterAccount, encryptedData, (status, response) =>
-                {
-
                     if (status != ResponseStatus.Success)
                     {
-                        callback.Invoke(false, response.AsString("Unknown error"));
+                        callback.Invoke(
+                            false, response.AsString("Unknown error"));
                         return;
                     }
 
                     callback.Invoke(true, null);
 
-                    if (Registered != null)
-                        Registered.Invoke();
+                    Registered?.Invoke();
                 });
-            }, connection);
         }
 
         /// <summary>
@@ -108,39 +113,41 @@ namespace Barebones.MasterServer
             if ((connection != null) && connection.IsConnected)
                 connection.Reconnect();
 
-            if (LoggedOut != null)
-                LoggedOut.Invoke();
+            LoggedOut?.Invoke();
         }
 
         /// <summary>
         /// Sends a request to server, to log in as a guest
         /// </summary>
         /// <param name="callback"></param>
-        public void LogInAsGuest(LoginCallback callback)
+        public async Task LogInAsGuest(LoginCallback callback)
         {
-            LogIn(new Dictionary<string, string>()
+            await LogIn(new Dictionary<string, string>()
             {
-                {"guest", "" }
+                {"guest", ""}
             }, callback, Connection);
         }
 
         /// <summary>
         /// Sends a request to server, to log in as a guest
         /// </summary>
-        public void LogInAsGuest(LoginCallback callback, IClientSocket connection)
+        public async Task LogInAsGuest(LoginCallback callback,
+                                       IClientSocket connection)
         {
-            LogIn(new Dictionary<string, string>()
+            await LogIn(new Dictionary<string, string>()
             {
-                {"guest", "" }
+                {"guest", ""}
             }, callback, connection);
         }
 
         /// <summary>
         /// Sends a login request, using given credentials
         /// </summary>
-        public void LogIn(string username, string password, LoginCallback callback, IClientSocket connection)
+        public async Task LogIn(string username, string password,
+                                LoginCallback callback,
+                                IClientSocket connection)
         {
-            LogIn(new Dictionary<string, string>
+            await LogIn(new Dictionary<string, string>
             {
                 {"username", username},
                 {"password", password}
@@ -150,9 +157,10 @@ namespace Barebones.MasterServer
         /// <summary>
         /// Sends a login request, using given credentials
         /// </summary>
-        public void LogIn(string username, string password, LoginCallback callback)
+        public async Task LogIn(string username, string password,
+                                LoginCallback callback)
         {
-            LogIn(username, password, callback, Connection);
+            await LogIn(username, password, callback, Connection);
         }
 
         /// <summary>
@@ -160,15 +168,18 @@ namespace Barebones.MasterServer
         /// </summary>
         /// <param name="data"></param>
         /// <param name="callback"></param>
-        public void LogIn(Dictionary<string, string> data, LoginCallback callback)
+        public async Task LogIn(Dictionary<string, string> data,
+                                LoginCallback callback)
         {
-            LogIn(data, callback, Connection);
+            await LogIn(data, callback, Connection);
         }
 
         /// <summary>
         /// Sends a generic login request
         /// </summary>
-        public void LogIn(Dictionary<string, string> data, LoginCallback callback, IClientSocket connection)
+        public async Task LogIn(Dictionary<string, string> data,
+                                LoginCallback callback,
+                                IClientSocket connection)
         {
             if (!connection.IsConnected)
             {
@@ -180,24 +191,29 @@ namespace Barebones.MasterServer
 
             // We first need to get an aes key 
             // so that we can encrypt our login data
-            Msf.Security.GetAesKey(aesKey =>
+            var aesKey = await Msf.Security.GetAesKey(connection);
+            if (aesKey == null)
             {
-                if (aesKey == null)
-                {
-                    _isLoggingIn = false;
-                    callback.Invoke(null, "Failed to log in due to security issues");
-                    return;
-                }
+                _isLoggingIn = false;
+                callback.Invoke(
+                    null, "Failed to log in due to security issues");
+                return;
+            }
 
-                var encryptedData = Msf.Security.EncryptAES(data.ToBytes(), aesKey);
+            var encryptedData =
+                await Msf.Security.EncryptAES(data.ToBytes(), aesKey);
 
-                connection.SendMessage((short) MsfOpCodes.LogIn, encryptedData, (status, response) =>
+            connection.SendMessage(
+                (short) MsfOpCodes.LogIn,
+                encryptedData,
+                (status, response) =>
                 {
                     _isLoggingIn = false;
 
                     if (status != ResponseStatus.Success)
                     {
-                        callback.Invoke(null, response.AsString("Unknown error"));
+                        callback.Invoke(
+                            null, response.AsString("Unknown error"));
                         return;
                     }
 
@@ -207,10 +223,8 @@ namespace Barebones.MasterServer
 
                     callback.Invoke(AccountInfo, null);
 
-                    if (LoggedIn != null)
-                        LoggedIn.Invoke();
+                    LoggedIn?.Invoke();
                 });
-            }, connection);
         }
 
         /// <summary>
@@ -226,7 +240,8 @@ namespace Barebones.MasterServer
         /// <summary>
         /// Sends an e-mail confirmation code to the server
         /// </summary>
-        public void ConfirmEmail(string code, SuccessCallback callback, IClientSocket connection)
+        public void ConfirmEmail(string code, SuccessCallback callback,
+                                 IClientSocket connection)
         {
             if (!connection.IsConnected)
             {
@@ -240,16 +255,20 @@ namespace Barebones.MasterServer
                 return;
             }
 
-            connection.SendMessage((short)MsfOpCodes.ConfirmEmail, code, (status, response) =>
-            {
-                if (status != ResponseStatus.Success)
+            connection.SendMessage(
+                (short) MsfOpCodes.ConfirmEmail,
+                code,
+                (status, response) =>
                 {
-                    callback.Invoke(false, response.AsString("Unknown error"));
-                    return;
-                }
+                    if (status != ResponseStatus.Success)
+                    {
+                        callback.Invoke(
+                            false, response.AsString("Unknown error"));
+                        return;
+                    }
 
-                callback.Invoke(true, null);
-            });
+                    callback.Invoke(true, null);
+                });
         }
 
         /// <summary>
@@ -264,7 +283,8 @@ namespace Barebones.MasterServer
         /// <summary>
         /// Sends a request to server, to ask for an e-mail confirmation code
         /// </summary>
-        public void RequestEmailConfirmationCode(SuccessCallback callback, IClientSocket connection)
+        public void RequestEmailConfirmationCode(
+            SuccessCallback callback, IClientSocket connection)
         {
             if (!connection.IsConnected)
             {
@@ -278,16 +298,19 @@ namespace Barebones.MasterServer
                 return;
             }
 
-            connection.SendMessage((short)MsfOpCodes.RequestEmailConfirmCode, (status, response) =>
-            {
-                if (status != ResponseStatus.Success)
+            connection.SendMessage(
+                (short) MsfOpCodes.RequestEmailConfirmCode,
+                (status, response) =>
                 {
-                    callback.Invoke(false, response.AsString("Unknown error"));
-                    return;
-                }
+                    if (status != ResponseStatus.Success)
+                    {
+                        callback.Invoke(
+                            false, response.AsString("Unknown error"));
+                        return;
+                    }
 
-                callback.Invoke(true, null);
-            });
+                    callback.Invoke(true, null);
+                });
         }
 
         /// <summary>
@@ -301,7 +324,8 @@ namespace Barebones.MasterServer
         /// <summary>
         /// Sends a request to server, to ask for a password reset
         /// </summary>
-        public void RequestPasswordReset(string email, SuccessCallback callback, IClientSocket connection)
+        public void RequestPasswordReset(string email, SuccessCallback callback,
+                                         IClientSocket connection)
         {
             if (!connection.IsConnected)
             {
@@ -309,22 +333,27 @@ namespace Barebones.MasterServer
                 return;
             }
 
-            connection.SendMessage((short)MsfOpCodes.PasswordResetCodeRequest, email, (status, response) =>
-            {
-                if (status != ResponseStatus.Success)
-                {
-                    callback.Invoke(false, response.AsString("Unknown error"));
-                    return;
-                }
+            connection.SendMessage((short) MsfOpCodes.PasswordResetCodeRequest,
+                                   email, (status, response) =>
+                                   {
+                                       if (status != ResponseStatus.Success)
+                                       {
+                                           callback.Invoke(
+                                               false,
+                                               response.AsString(
+                                                   "Unknown error"));
+                                           return;
+                                       }
 
-                callback.Invoke(true, null);
-            });
+                                       callback.Invoke(true, null);
+                                   });
         }
 
         /// <summary>
         /// Sends a new password to server
         /// </summary>
-        public void ChangePassword(PasswordChangeData data, SuccessCallback callback)
+        public void ChangePassword(PasswordChangeData data,
+                                   SuccessCallback callback)
         {
             ChangePassword(data, callback, Connection);
         }
@@ -332,7 +361,9 @@ namespace Barebones.MasterServer
         /// <summary>
         /// Sends a new password to server
         /// </summary>
-        public void ChangePassword(PasswordChangeData data, SuccessCallback callback, IClientSocket connection)
+        public void ChangePassword(PasswordChangeData data,
+                                   SuccessCallback callback,
+                                   IClientSocket connection)
         {
             if (!connection.IsConnected)
             {
@@ -342,21 +373,25 @@ namespace Barebones.MasterServer
 
             var dictionary = new Dictionary<string, string>()
             {
-                {"email", data.Email },
-                {"code", data.Code },
-                {"password", data.NewPassword }
+                {"email", data.Email},
+                {"code", data.Code},
+                {"password", data.NewPassword}
             };
 
-            connection.SendMessage((short)MsfOpCodes.PasswordChange, dictionary.ToBytes(), (status, response) =>
-            {
-                if (status != ResponseStatus.Success)
+            connection.SendMessage(
+                (short) MsfOpCodes.PasswordChange,
+                dictionary.ToBytes(),
+                (status, response) =>
                 {
-                    callback.Invoke(false, response.AsString("Unknown error"));
-                    return;
-                }
+                    if (status != ResponseStatus.Success)
+                    {
+                        callback.Invoke(
+                            false, response.AsString("Unknown error"));
+                        return;
+                    }
 
-                callback.Invoke(true, null);
-            });
+                    callback.Invoke(true, null);
+                });
         }
     }
 }

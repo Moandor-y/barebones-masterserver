@@ -192,7 +192,7 @@ namespace Barebones.MasterServer
         /// Handles client's request to change password
         /// </summary>
         /// <param name="message"></param>
-        protected virtual void HandlePasswordChange(IIncommingMessage message)
+        protected virtual async void HandlePasswordChange(IIncommingMessage message)
         {
             var data = new Dictionary<string, string>().FromBytes(message.AsBytes());
 
@@ -217,7 +217,7 @@ namespace Barebones.MasterServer
             // Delete (overwrite) code used
             db.SavePasswordResetCode(account, null);
 
-            account.Password = Msf.Security.CreateHash(data["password"]);
+            account.Password = await Msf.Security.CreateHash(data["password"]);
             db.UpdateAccount(account);
 
             message.Respond(ResponseStatus.Success);
@@ -355,7 +355,7 @@ namespace Barebones.MasterServer
         /// Handles account registration request
         /// </summary>
         /// <param name="message"></param>
-        protected virtual void HandleRegister(IIncommingMessage message)
+        protected virtual async void HandleRegister(IIncommingMessage message)
         {
             var encryptedData = message.AsBytes();
 
@@ -369,7 +369,7 @@ namespace Barebones.MasterServer
                 return;
             }
 
-            var decrypted = Msf.Security.DecryptAES(encryptedData, aesKey);
+            var decrypted = await Msf.Security.DecryptAES(encryptedData, aesKey);
             var data = new Dictionary<string, string>().FromBytes(decrypted);
 
             if (!data.ContainsKey("username") || !data.ContainsKey("password") || !data.ContainsKey("email"))
@@ -435,7 +435,7 @@ namespace Barebones.MasterServer
 
             account.Username = username;
             account.Email = email;
-            account.Password = Msf.Security.CreateHash(password);
+            account.Password = await Msf.Security.CreateHash(password);
 
             try
             {
@@ -499,7 +499,7 @@ namespace Barebones.MasterServer
         /// Handles a request to log in
         /// </summary>
         /// <param name="message"></param>
-        protected virtual void HandleLogIn(IIncommingMessage message)
+        protected virtual async void HandleLogIn(IIncommingMessage message)
         {
             if (message.Peer.HasExtension<IUserExtension>())
             {
@@ -518,7 +518,7 @@ namespace Barebones.MasterServer
                 return;
             }
 
-            var decrypted = Msf.Security.DecryptAES(encryptedData, aesKey);
+            var decrypted = await Msf.Security.DecryptAES(encryptedData, aesKey);
             var data = new Dictionary<string, string>().FromBytes(decrypted);
 
             var db = Msf.Server.DbAccessors.GetAccessor<IAuthDatabase>();
@@ -575,7 +575,7 @@ namespace Barebones.MasterServer
                     return;
                 }
 
-                if (!Msf.Security.ValidatePassword(password, accountData.Password))
+                if (!await Msf.Security.ValidatePassword(password, accountData.Password))
                 {
                     // Password is not correct
                     message.Respond("Invalid Credentials".ToBytes(), ResponseStatus.Unauthorized);
