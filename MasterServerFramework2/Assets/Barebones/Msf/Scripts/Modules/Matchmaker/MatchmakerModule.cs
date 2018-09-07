@@ -9,24 +9,11 @@ namespace Barebones.MasterServer
     {
         protected HashSet<IGamesProvider> GameProviders;
 
-        protected virtual void Awake()
-        {
-            AddOptionalDependency<RoomsModule>();
-            AddOptionalDependency<LobbiesModule>();
-        }
-
         public override void Initialize(IServer server)
         {
             base.Initialize(server);
 
             GameProviders = new HashSet<IGamesProvider>();
-
-            // Dependencies
-            if (server.GetModule<RoomsModule>() != null)
-                AddProvider(server.GetModule<RoomsModule>());
-
-            if (server.GetModule<LobbiesModule>() != null)
-                AddProvider(server.GetModule<LobbiesModule>());
 
             // Add handlers
             server.SetHandler((short) MsfOpCodes.FindGames, HandleFindGames);
