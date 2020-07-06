@@ -140,31 +140,10 @@ namespace Barebones.Networking
 
             if (SupportsThreads)
             {
-	            //HACK: When restarting in the Unity Editor, send a ping to the destination first to avoid having Connect() hang for 90 seconds.
-	            //https://github.com/alvyxaz/barebones-masterserver/pull/142
-	            
-	            //Note: On Windows Store Apps, a stream socket is used to mimic ping functionality. It will try to open connection to specified ip address with port 80. Also you need to enable InternetClient capability in Package.appxmanifest.
-	            //https://docs.unity3d.com/ScriptReference/Ping.html
-	            Ping ping = new Ping(mUrl.Host);
-	            
-	            //The ping send/receive takes about a second, so we wait for it to complete.
-	            while (!ping.isDone)
-	            {
-		            yield return null;
-	            }
-	            
-	            //If the ping succeeded, the time will be 0 or higher, otherwise -1. 
-	            if (ping.time >= 0)
-	            {   
-		            runThread(() =>
-		            {
-			            m_Socket.Connect();
-		            });
-	            }
-	            else
-	            {
-		            m_Error = "Barebones Websocket: Could not contact \"" + mUrl.Host + "\" with Ping.";
-	            }
+                runThread(() =>
+                {
+                    m_Socket.Connect();
+                });
             }
             else
             {
